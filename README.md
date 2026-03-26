@@ -1,6 +1,6 @@
 # AWS PrivateLink Solution: Overlapping CIDR Challenge
 
-![AWS Architecture Diagram](Overlapping_CIDR_VPC_Peering.drawio.png)
+![AWS Architecture Diagram](assets/Overlapping_CIDR_VPC_Peering.drawio.png)
 
 ---
 
