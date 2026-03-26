@@ -50,8 +50,8 @@ echo "<h1>Welcome to Nginx via PrivateLink</h1>" > /usr/share/nginx/html/index.h
 ```
 
 **Security Group (SG-Nginx-Provider):**
-- Inbound: Allow TCP 80 dari CIDR Subnet NLB.
-- Outbound: Allow HTTPS (443), dengan routing ke S3 dikontrol melalui Gateway Endpoint di Route Table.
+- Inbound: Allow TCP 80 | Source: CIDR Subnet NLB.
+- Outbound: Allow HTTPS (443) | Destination: S3 Prefix List ID (Contoh: pl-63a5400a).
 
 ### 3. Target Group
 - Name: TG-Nginx-80 | Protocol: TCP | Port: 80
