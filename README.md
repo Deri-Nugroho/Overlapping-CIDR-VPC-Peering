@@ -100,12 +100,12 @@ curl -Iv [http://nginx.service.local](http://nginx.service.local)
 
 # IV. Trade-offs Analysis
 ## Pros:
-- ProsConsSolusi bersih untuk overlapping CIDR
+- Solusi bersih untuk overlapping CIDR
 - High security (Isolated dari internet)
 - Efisiensi biaya (No NAT Gateway)
 
 ## Cons:
-- Cost (NLB + Endpoint per AZ)
+- (NLB + Endpoint per AZ)
 - Komunikasi bersifat Unidirectional\
 - Setup lebih kompleks dibanding VPC Peering
 
