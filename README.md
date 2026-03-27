@@ -153,9 +153,9 @@ Contoh Service Name:
 ### B. Interface Endpoints (Consumer)
 
 ## 1. SSM Endpoints (3 Required)
-- `ssm `
-- `ssmmessages `
-- `ec2messages `
+- `ssm`
+- `ssmmessages`
+- `ec2messages`
 
 Gunakan:
 - SG: `SG-VPCE-SSM `
