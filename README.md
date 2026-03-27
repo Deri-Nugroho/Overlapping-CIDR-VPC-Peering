@@ -7,8 +7,6 @@
 ## 📌 Overview
 Project ini mendokumentasikan implementasi **AWS PrivateLink** sebagai solusi untuk mengatasi konflik routing pada VPC dengan CIDR identik (**VPC A & VPC C: 10.0.0.0/16**). Arsitektur ini mengadopsi prinsip **Zero Trust & Cost-Efficient**, memastikan layanan tetap terisolasi tanpa memerlukan Internet Gateway, NAT Gateway, maupun Public IP.
 
----
-
 - VPC A: `10.0.0.0/16`
 - VPC C: `10.0.0.0/16`
 
@@ -18,10 +16,7 @@ Arsitektur ini mengadopsi prinsip:
 - 💰 Cost-Efficient
 - 🌐 Tanpa Internet Gateway, NAT Gateway, dan Public IP
 
----
-
 ## 🎯 Key Takeaways
-
 - **Overlapping Resolution**  
   PrivateLink menghindari ketergantungan pada routing Layer 3 (CIDR) ❌
 
@@ -37,8 +32,6 @@ Arsitektur ini mengadopsi prinsip:
 - **Zero Inbound Management**  
   Akses EC2 via AWS Systems Manager (SSM), tanpa buka port 22
 
----
-
 ## 💡 Arsitektur Logic (Golden Answer)
 
 ### ❓ Mengapa Tidak Terjadi Konflik Routing?
@@ -53,8 +46,6 @@ Sebagai gantinya:
 
 👉 **Tidak ada pertukaran CIDR → tidak ada konflik overlapping**
 
----
-
 ## I. 🏗️ Persiapan Infrastruktur
 
 ### A. Provider (VPC B - 10.1.0.0/16)
@@ -67,8 +58,6 @@ Sebagai gantinya:
 Digunakan agar EC2 bisa install package tanpa internet:
 
 - Associate ke Route Table VPC B
-
----
 
 ### B. Consumer (VPC A & VPC C - 10.0.0.0/16)
 
@@ -97,8 +86,6 @@ Aktifkan:
 - **Outbound**
   - HTTPS 443 → Destination: S3 Prefix List
 
----
-
 ### B. Consumer (VPC A & C)
 
 #### SG-EC2-Client
@@ -110,14 +97,10 @@ Aktifkan:
   - TCP 443 → SG-VPCE-SSM
   - TCP 80 → SG-VPCE-Privatelink
 
----
-
 #### SG-VPCE-SSM
 
 - **Inbound**
   - TCP 443 → Source: SG-EC2-Client
-
----
 
 #### SG-VPCE-Privatelink
 
@@ -156,6 +139,8 @@ Target Group: EC2 Nginx
 - IAM Role: `AmazonSSMManagedInstanceCore`
 - Security Group: `SG-EC2-Client`
 
+---
+
 ## IV. 🔗 Implementasi AWS PrivateLink
 
 ### A. Endpoint Service (Provider - VPC B)
@@ -177,7 +162,7 @@ Gunakan:
 - Enable Private DNS
 
 ## 2. Nginx Interface Endpoint
-- Pilih: Other endpoint services
+- Pilih: Endpoint services that use NLBs and GWLBs
 - Masukkan Service Name dari provider
 - SG: SG-VPCE-Privatelink
 - Subnet: AZ yang sama dengan EC2
@@ -189,6 +174,8 @@ Gunakan:
 
 Record:
 `nginx.service.local → Alias ke Interface Endpoint DNS `
+
+---
 
 ## V. 🧪 Testing & Verification
 
@@ -222,6 +209,8 @@ curl -Iv http://nginx.service.local
 - Koneksi sukses
 - Tidak ada konflik CIDR
 
+---
+
 ## VI. ⚖️ Trade-offs Analysis
 
 ### ✅ Pros
@@ -238,6 +227,8 @@ curl -Iv http://nginx.service.local
   ❌ Mahal
   ❌ Menambah attack surface
 
+---
+
 ## 🏁 Kesimpulan
 
 Arsitektur ini:
@@ -247,6 +238,8 @@ Arsitektur ini:
 
 Dengan pendekatan:
 `Service-Level Communication over Network-Level Connectivity`
+
+---
 
 ## 🧠 Author Notes
 Project ini menunjukkan pendekatan Architect-level thinking dalam:
