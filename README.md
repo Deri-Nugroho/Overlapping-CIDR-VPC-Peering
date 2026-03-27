@@ -63,8 +63,9 @@ echo "<h1>Welcome to Nginx via PrivateLink</h1>" > /usr/share/nginx/html/index.h
 
 ### 2. Client EC2 (Probe)
 - IAM Role: Pasang policy AmazonSSMManagedInstanceCore.
-- Security Group: Tidak perlu membuka port inbound (termasuk port 22). SSM Session Manager bekerja melalui agent-based communication via AWS Control Plane.
-
+- Security Group:
+  - **Inbound:** `None` (Secure by default).
+  - **Outbound:** Allow TCP 80 to SG-VPCE.
 # II. Implementasi PrivateLink
 ## A. Network Load Balancer (VPC B)
 - Name: NLB-PrivateLink | Scheme: Internal.
@@ -75,9 +76,24 @@ echo "<h1>Welcome to Nginx via PrivateLink</h1>" > /usr/share/nginx/html/index.h
 - Service Name: com.amazonaws.vpce.us-east-1.vpce-svc-xxx
 
 ## C. Interface Endpoint (VPC A & VPC C)
-- Service Category: Other endpoint services.
-- Private DNS: Enabled (Contoh: nginx.service.local).
-- Security Group Endpoint: Inbound TCP 80 dari EC2 client.
+- Type: Endpoint services that use NLBs and GWLBs.
+- Service Name: Paste dari VPC B Provider.
+- Subnets: Pilih Subnet Privat di mana EC2 Client berada (misal: us-east-1a).
+- IP Address: Biarkan Auto-assign (Default).
+- Security Group (SG-VPCE):
+  - Inbound: Allow TCP 80 from SG-Client.
+  - Outbound: `None` (atau default).
+- DNS: Gunakan Route 53 Private Hosted Zone (PHZ) untuk memetakan nginx.service.local ke DNS Name bawaan Interface Endpoint.
+
+```bash
+Note on DNS:
+- Private DNS dikonfigurasi menggunakan Route 53 Private Hosted Zone yang di-associate ke VPC Consumer.
+Hal ini memungkinkan penggunaan custom domain nginx.service.local yang diarahkan ke
+Interface Endpoint secara internal tanpa memerlukan verifikasi domain publik.
+- On AZ Alignment: Pastikan Subnet yang dipilih pada VPC Consumer berada di Availability Zone (AZ)
+yang sama dengan yang didukung oleh Endpoint Service di Provider. Jika muncul "No subnet available",
+buatlah subnet baru di AZ yang sesuai.
+```
 
 # III. Testing & Verification
 ## A. Accept Connection (VPC B)
