@@ -107,22 +107,22 @@ AWS PrivateLink bekerja di **Layer 4 (TCP)** dan tidak menggunakan tabel routing
 1. **Acceptance:** Pada VPC B, **Accept** semua koneksi di menu *Endpoint Connections*.
 2. **Connectivity Test:**
 
-# 1. DNS Check
+### 1. DNS Check
 ```bash
 nslookup nginx.service.local
 ```
 
-# 2. Port Check
+### 2. Port Check
 ```bash
 timeout 2 bash -c '</dev/tcp/nginx.service.local/80' && echo "PORT OPEN"
 ```
 
-# 3. HTTP Validation
+### 3. HTTP Validation
 ```bash
-curl -Iv [http://nginx.service.local](http://nginx.service.local)
+curl -Iv http://nginx.service.local
 ```
 
-#Expected Result: `HTTP/1.1 200 OK`.
+Expected Result: `HTTP/1.1 200 OK`.
 
 3. **HA Validation:** Matikan EC2 Nginx di AZ `1a`.
    - Lakukan `curl` kembali dari Client. Layanan harus tetap bisa diakses melalui EC2 di AZ `1b`.
