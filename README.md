@@ -1,47 +1,137 @@
 # AWS PrivateLink Solution: Overlapping CIDR Challenge
 
-![AWS Architecture Diagram](assets/Overlapping_CIDR_VPC_Peering.drawio.png)
-
----
-
 ## 📌 Overview
-Project ini mendokumentasikan implementasi **AWS PrivateLink** sebagai solusi untuk mengatasi konflik routing pada VPC dengan CIDR identik (**VPC A & VPC C: 10.0.0.0/16**). Arsitektur ini mengadopsi prinsip **Zero Trust & Cost-Efficient**, memastikan layanan tetap terisolasi tanpa memerlukan Internet Gateway, NAT Gateway, maupun Public IP.
+Project ini mendokumentasikan implementasi **AWS PrivateLink** sebagai solusi untuk mengatasi konflik routing pada VPC dengan CIDR identik:
+
+- VPC A: `10.0.0.0/16`
+- VPC C: `10.0.0.0/16`
+
+Arsitektur ini mengadopsi prinsip:
+
+- 🔐 Zero Trust
+- 💰 Cost-Efficient
+- 🌐 Tanpa Internet Gateway, NAT Gateway, dan Public IP
 
 ---
 
 ## 🎯 Key Takeaways
-* **Overlapping Resolution:** PrivateLink menghindari ketergantungan pada routing Layer 3 (CIDR) ❌.
-* **Layer 4 Communication:** Konektivitas terjadi di level TCP melalui AWS Backbone Network.
-* **Service-Level Abstraction:** Menggeser fokus dari *network-peering* ke *service-access*.
-* **Egress Control:** Menggunakan **S3 Gateway Endpoint** untuk manajemen paket OS tanpa biaya NAT Gateway.
-* **Zero Inbound Management:** Akses terminal melalui **AWS Systems Manager (SSM)** tanpa membuka port 22 (SSH).
+
+- **Overlapping Resolution**  
+  PrivateLink menghindari ketergantungan pada routing Layer 3 (CIDR) ❌
+
+- **Layer 4 Communication**  
+  Konektivitas berjalan di level TCP melalui AWS Backbone Network
+
+- **Service-Level Abstraction**  
+  Fokus berpindah dari network-peering ke service-access
+
+- **Egress Control**  
+  Menggunakan S3 Gateway Endpoint (tanpa NAT Gateway)
+
+- **Zero Inbound Management**  
+  Akses EC2 via AWS Systems Manager (SSM), tanpa buka port 22
 
 ---
 
 ## 💡 Arsitektur Logic (Golden Answer)
-### Mengapa Tidak Terjadi Konflik Routing?
-AWS PrivateLink bekerja pada **Layer 4 (TCP)** dan tidak menggunakan tabel routing antar VPC. Sebagai gantinya:
-1. Setiap VPC Consumer memiliki **Interface Endpoint (ENI)** dengan IP lokal.
-2. Trafik diarahkan ke **Network Load Balancer (NLB)** di VPC Provider via internal AWS network.
 
-👉 Karena tidak ada pertukaran rute CIDR antar VPC, **overlapping CIDR tidak menjadi masalah.**
+### ❓ Mengapa Tidak Terjadi Konflik Routing?
+
+AWS PrivateLink bekerja di **Layer 4 (TCP)** dan tidak menggunakan routing antar VPC.
+
+Sebagai gantinya:
+
+- Consumer VPC memiliki **Interface Endpoint (ENI)** dengan IP lokal
+- Trafik dikirim ke **Network Load Balancer (NLB)** di Provider VPC
+- Komunikasi lewat **AWS internal backbone network**
+
+👉 **Tidak ada pertukaran CIDR → tidak ada konflik overlapping**
 
 ---
 
-# I. Persiapan Infrastruktur VPC
+## I. 🏗️ Persiapan Infrastruktur
 
-## A. Provider (VPC B - 10.1.0.0/16)
+### A. Provider (VPC B - 10.1.0.0/16)
 
-### 1. Dasar Jaringan & Private Access
-* **VPC Name:** `VPC-B-Provider` | **CIDR:** `10.1.0.0/16`
-* **S3 Gateway Endpoint:** Dikonfigurasi pada **Route Table** VPC B. Gateway Endpoint bekerja dengan memodifikasi *route table* menggunakan AWS-managed prefix list (tanpa ENI).
-* **IAM Role:** Menggunakan `LabInstanceRole` (AWS Academy) atau Role dengan policy `AmazonSSMManagedInstanceCore`.
+- Buat VPC: `VPC-B-Provider`
+- CIDR: `10.1.0.0/16`
+- Subnet: Private Subnet (misal `us-east-1a`)
 
-### 2. Deploy Nginx Server (EC2)
-**User Data Script:**
+#### S3 Gateway Endpoint (WAJIB)
+Digunakan agar EC2 bisa install package tanpa internet:
+
+- Associate ke Route Table VPC B
+
+---
+
+### B. Consumer (VPC A & VPC C - 10.0.0.0/16)
+
+- VPC:
+  - `VPC-A-Consumer`
+  - `VPC-C-Consumer`
+- CIDR: `10.0.0.0/16` (identik)
+- Subnet: Private Subnet (AZ sama dengan provider)
+
+#### DNS Settings
+Aktifkan:
+- Enable DNS Hostnames
+- Enable DNS Resolution
+
+---
+
+## II. 🔐 Konfigurasi Security Groups
+
+### A. Provider (VPC B)
+
+#### SG-Nginx-Provider
+
+- **Inbound**
+  - TCP 80 → Source: `10.1.0.0/16`
+
+- **Outbound**
+  - HTTPS 443 → Destination: S3 Prefix List
+
+---
+
+### B. Consumer (VPC A & C)
+
+#### SG-EC2-Client
+
+- **Inbound**
+  - None
+
+- **Outbound**
+  - TCP 443 → SG-VPCE-SSM
+  - TCP 80 → SG-VPCE-Privatelink
+
+---
+
+#### SG-VPCE-SSM
+
+- **Inbound**
+  - TCP 443 → Source: SG-EC2-Client
+
+---
+
+#### SG-VPCE-Privatelink
+
+- **Inbound**
+  - TCP 80 → Source: SG-EC2-Client
+
+---
+
+## III. ⚙️ Deployment Compute & Load Balancer
+
+### A. Provider Side (VPC B)
+
+#### EC2 Nginx Server
+
+- IAM Role: `AmazonSSMManagedInstanceCore`
+- Security Group: `SG-Nginx-Provider`
+
+**User Data:**
 ```bash
 #!/bin/bash
-# Instalasi melalui AWS-managed repositories via S3 Gateway Endpoint
 yum update -y
 yum install nginx -y
 systemctl start nginx
@@ -49,86 +139,112 @@ systemctl enable nginx
 echo "<h1>Welcome to Nginx via PrivateLink</h1>" > /usr/share/nginx/html/index.html
 ```
 
-**Security Group (SG-Nginx-Provider):**
-- Inbound: Allow TCP 80 | Source: CIDR Subnet NLB.
-- Outbound: Allow HTTPS (443) | Destination: S3 Prefix List ID (Contoh: pl-63a5400a).
+#### Network Load Balancer (NLB)
+Scheme: Internal
+Listener: TCP 80
+Target Group: EC2 Nginx
 
-### 3. Target Group
-- Name: TG-Nginx-80 | Protocol: TCP | Port: 80
-- Target: EC2 Nginx Instance.
+### B. Consumer Side (VPC A & C)
 
-## B. Consumer (VPC A & VPC C - 10.0.0.0/16)
-### 1. VPC & Subnet (Overlapping)
-- VPC A & C: 10.0.0.0/16 | Subnet: 10.0.1.0/24
+#### EC2 Client
+- IAM Role: `AmazonSSMManagedInstanceCore`
+- Security Group: `SG-EC2-Client`
 
-### 2. Client EC2 (Probe)
-- IAM Role: Pasang policy AmazonSSMManagedInstanceCore.
-- Security Group:
-  - **Inbound:** `None` (Secure by default).
-  - **Outbound:** Allow TCP 80 to SG-VPCE.
-# II. Implementasi PrivateLink
-## A. Network Load Balancer (VPC B)
-- Name: NLB-PrivateLink | Scheme: Internal.
-- Listener: TCP 80 → Forward ke Target Group.
+## IV. 🔗 Implementasi AWS PrivateLink
 
-## B. Endpoint Service (VPC B)
-- Attach ke NLB & Enable Acceptance Required.
-- Service Name: com.amazonaws.vpce.us-east-1.vpce-svc-xxx
+### A. Endpoint Service (Provider - VPC B)
+- Hubungkan ke NLB
+- Enable: `Acceptance Required `
 
-## C. Interface Endpoint (VPC A & VPC C)
-- Type: Endpoint services that use NLBs and GWLBs.
-- Service Name: Paste dari VPC B Provider.
-- Subnets: Pilih Subnet Privat di mana EC2 Client berada (misal: us-east-1a).
-- IP Address: Biarkan Auto-assign (Default).
-- Security Group (SG-VPCE):
-  - Inbound: Allow TCP 80 from SG-Client.
-  - Outbound: `None` (atau default).
-- DNS: Gunakan Route 53 Private Hosted Zone (PHZ) untuk memetakan nginx.service.local ke DNS Name bawaan Interface Endpoint.
+Contoh Service Name:
+`com.amazonaws.vpce.us-east-1.vpce-svc-xxxx `
+ 
+### B. Interface Endpoints (Consumer)
 
+## 1. SSM Endpoints (3 Required)
+- `ssm `
+- `ssmmessages `
+- `ec2messages `
+
+Gunakan:
+- SG: `SG-VPCE-SSM `
+- Enable Private DNS
+
+## 2. Nginx Interface Endpoint
+- Pilih: Other endpoint services
+- Masukkan Service Name dari provider
+- SG: SG-VPCE-Privatelink
+- Subnet: AZ yang sama dengan EC2
+
+### C. DNS Mapping (Route 53)
+
+- Private Hosted Zone:
+`service.local `
+
+Record:
+`nginx.service.local → Alias ke Interface Endpoint DNS `
+
+## V. 🧪 Testing & Verification
+
+### A. Acceptance
+- Masuk ke:
+  - VPC B → Endpoint Connections
+- Klik:
+  - Accept
+  - 
+### B. Connectivity Test
+
+Masuk ke EC2 via SSM Session Manager
+
+## 1. DNS Check
 ```bash
-Note on DNS:
-- Private DNS dikonfigurasi menggunakan Route 53 Private Hosted Zone yang di-associate ke VPC Consumer.
-Hal ini memungkinkan penggunaan custom domain nginx.service.local yang diarahkan ke
-Interface Endpoint secara internal tanpa memerlukan verifikasi domain publik.
-- On AZ Alignment: Pastikan Subnet yang dipilih pada VPC Consumer berada di Availability Zone (AZ)
-yang sama dengan yang didukung oleh Endpoint Service di Provider. Jika muncul "No subnet available",
-buatlah subnet baru di AZ yang sesuai.
+nslookup nginx.service.local
 ```
 
-# III. Testing & Verification
-## A. Accept Connection (VPC B)
-- Menyetujui permintaan koneksi dari VPC A & C pada menu Endpoint Connections.
-
-## B. Akses Terminal (SSM Session Manager)
-Gunakan AWS Systems Manager untuk akses aman tanpa Public IP:
-1. Pilih Instance Client A/C > Klik Connect.
-2. Pilih tab Session Manager > Klik Connect.
-
-## C. Testing Connectivity
+## 2. Port Check
 ```bash
-# Test koneksi ke Nginx di VPC B via PrivateLink DNS
-curl -Iv [http://nginx.service.local](http://nginx.service.local)
+timeout 2 bash -c '</dev/tcp/nginx.service.local/80' && echo "PORT OPEN" || echo "PORT CLOSED"
 ```
 
-## ✅ Expected Result
-- Client A & Client C mendapatkan response HTTP 200 OK.
-- Source IP Behavior: Nginx mencatat IP privat dari NLB node, bukan IP asli client, menjaga abstraksi network tetap utuh.
+## 3. HTTP Request
+```bash
+curl -Iv http://nginx.service.local
+```
 
-# IV. Trade-offs Analysis
-## Pros:
+### ✅ Expected Result
+- HTTP 200 OK
+- Koneksi sukses
+- Tidak ada konflik CIDR
+
+## VI. ⚖️ Trade-offs Analysis
+
+### ✅ Pros
 - Solusi bersih untuk overlapping CIDR
-- High security (Isolated dari internet)
-- Efisiensi biaya (No NAT Gateway)
+- High security (no inbound exposure)
+- Cost-efficient (no NAT Gateway)
 
-## Cons:
-- (NLB + Endpoint per AZ)
-- Komunikasi bersifat Unidirectional\
-- Setup lebih kompleks dibanding VPC Peering
+### ❌ Cons
+- Setup lebih kompleks
+- Hanya komunikasi satu arah (consumer → provider)
 
-# V. Alternative Approach
-**Alternatif**: NAT Gateway / NAT Instance.
+### 🔄 Alternative
+- NAT Gateway
+  ❌ Mahal
+  ❌ Menambah attack surface
 
-**Analisis**: NAT Gateway dapat melakukan IP Translation, namun biaya operasionalnya jauh lebih tinggi dan memperluas attack surface karena memberikan akses internet keluar secara umum.
+## 🏁 Kesimpulan
 
-# 🏁 Kesimpulan
-Arsitektur ini mengeliminasi ketergantungan pada internet publik dan NAT Gateway, secara signifikan mengurangi biaya operasional sekaligus memperkuat postur keamanan. Solusi ini membuktikan bahwa komunikasi antar-VPC dapat dikelola secara efisien di level layanan (service-level), bahkan dalam kondisi konflik jaringan yang kompleks.
+Arsitektur ini:
+- Menghilangkan kebutuhan internet publik
+- Mengurangi biaya operasional
+- Meningkatkan keamanan secara signifikan
+
+Dengan pendekatan:
+`Service-Level Communication over Network-Level Connectivity`
+
+## 🧠 Author Notes
+Project ini menunjukkan pendekatan Architect-level thinking dalam:
+- Network isolation
+- Cost optimization
+- Zero Trust implementation
+- Cloud-native design
